@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "unpack": "tsx scripts/unpack.ts",
-    "build": "tsx scripts/build.ts"
+    "build": "tsx scripts/build.ts",
+    "run1": "tsx scripts/run.ts 1",
+    "run2": "tsx scripts/run.ts 2"
   },
   "repository": "git@github.com:kenny-7100/hayarigami-2-cn.git",
   "author": "kenny-7100 <233663230+kenny-7100@users.noreply.github.com>",
