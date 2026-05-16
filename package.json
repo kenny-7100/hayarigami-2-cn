@@ -8,7 +8,8 @@
     "build": "tsx scripts/build.ts",
     "run1": "tsx scripts/run.ts 1",
     "run2": "tsx scripts/run.ts 2",
-    "extract-original": "tsx scripts/extract-original.ts"
+    "extract-original": "tsx scripts/extract-original.ts",
+    "write-back": "tsx scripts/write-back.ts"
   },
   "repository": "git@github.com:kenny-7100/hayarigami-2-cn.git",
   "author": "kenny-7100 <233663230+kenny-7100@users.noreply.github.com>",
