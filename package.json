@@ -1,0 +1,13 @@
+{
+  "name": "hayarigami-2-cn",
+  "version": "1.0.0",
+  "main": "index.js",
+  "repository": "git@github.com:kenny-7100/hayarigami-2-cn.git",
+  "author": "kenny-7100 <233663230+kenny-7100@users.noreply.github.com>",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "24",
+    "tsx": "^4.22.0",
+    "typescript": "^6.0.3"
+  }
+}
