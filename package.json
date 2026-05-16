@@ -8,7 +8,7 @@
     "build": "tsx scripts/build.ts",
     "run1": "tsx scripts/run.ts 1",
     "run2": "tsx scripts/run.ts 2",
-    "extract-original": "todo"
+    "extract-original": "tsx scripts/extract-original.ts"
   },
   "repository": "git@github.com:kenny-7100/hayarigami-2-cn.git",
   "author": "kenny-7100 <233663230+kenny-7100@users.noreply.github.com>",
@@ -17,5 +17,8 @@
     "@types/node": "24",
     "tsx": "^4.22.0",
     "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "iconv-lite": "^0.7.2"
   }
 }
