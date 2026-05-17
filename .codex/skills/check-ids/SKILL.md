@@ -1,6 +1,6 @@
 ---
 name: check-ids
-description: 在 hayarigami-2-cn 项目中，需要校验指定翻译 id 或全量已翻译条目的字节长度、目标编码和基础写回安全性时使用。
+description: 在 hayarigami-2-cn 项目中，需要校验指定翻译 id 或全量已翻译条目的字节长度、目标编码、游戏内置 jis2ucs 字符集和基础写回安全性时使用。
 ---
 
 # check-ids
@@ -17,10 +17,17 @@ description: 在 hayarigami-2-cn 项目中，需要校验指定翻译 id 或全�
 - 显式传入 id 时，`translation` 是否非空
 - `encoding` 是否受支持：`shift_jis`、`cp932`、`utf-8`、`ascii`
 - 译文是否能用目标编码无损编码和解码
+- `shift_jis`、`cp932`、`ascii` 译文是否落在当前 ISO 内置 `DATA.DAT/NISPACK/jis2ucs.bin` 字符集内
+- 非 ASCII 译文字符是否在 `workspace/original.csv` 的 `confirmed` 原文中出现过，作为当前资源里有显示样本的保守证据
+- 对部分已知异体字/繁简字给出 confirmed 可显示替代建议；候选表维护在 `scripts/game-char-replacements.ts`
 - 编码后的译文字节长度是否小于等于 `raw_length`
 - `raw_length` 是否是非负安全整数
 
-注意：这个脚本不能证明游戏字库一定包含所有字形，也不能证明游戏 UI 一定能正确渲染文本。它只是编码和字节预算的检查，不是完整的画面 QA。
+当前字符集标准不是完整 JIS X 0213 Plane 1。脚本会读取游戏资源里的 `jis2ucs.bin`，以这张表的非零映射为准。`utf-8` 行通常用于 `PARAM.SFO` 等不走这套游戏文本渲染链路的资源，所以不做 `jis2ucs.bin` 检查。
+
+替代建议表必须满足：左侧字符按当前规则不可安全显示，右侧字符按当前规则可安全显示，并且右侧是左侧的保守字形/正字替代。修改 `scripts/game-char-replacements.ts` 后必须运行 `yarn -s validate-char-replacements`。
+
+注意：这个脚本能提前拦截不属于游戏内置字符集、或没有 confirmed 原文显示样本的译文，但仍不能证明 FontA/FontB 纹理里每个字形像素都正确，也不能证明游戏 UI 一定能正确排版。它是写回前的保守字符集/编码/字节预算检查，不是完整画面 QA。
 
 ## 命令
 
@@ -92,4 +99,32 @@ id: story.dat:2109:0:0x45D260
 问题: 译文字节数超限：18 > 16
 
 未全部通过：1/2
+```
+
+字符集失败输出形态：
+
+```text
+id: story.dat:2109:6:0x45D390
+状态: 未通过
+字节: 18/42
+问题: 字符不在游戏内置 jis2ucs 字符集：閒(U+9592)
+
+未全部通过：1/2
+```
+
+显示样本失败输出形态：
+
+```text
+id: story.dat:2109:5:0x45D368
+状态: 未通过
+字节: 22/32
+问题: 字符没有 confirmed 原文显示样本：數(U+6578)
+```
+
+如果脚本有已知替代字，会在同一行给出建议：
+
+```text
+问题: 字符没有 confirmed 原文显示样本：數(U+6578)，建议改为：数
+
+未全部通过：6/7
 ```

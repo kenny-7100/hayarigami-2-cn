@@ -11,6 +11,7 @@
     "extract-original": "tsx scripts/extract-original.ts",
     "write-back": "tsx scripts/write-back.ts",
     "check-ids": "tsx scripts/check-ids.ts",
+    "validate-char-replacements": "tsx scripts/validate-char-replacements.ts",
     "coverage": "tsx scripts/coverage.ts"
   },
   "repository": "git@github.com:kenny-7100/hayarigami-2-cn.git",

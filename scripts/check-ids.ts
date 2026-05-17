@@ -1,15 +1,73 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import iconv from "iconv-lite";
+import { preferredCharReplacements } from "./game-char-replacements.js";
 
 const rootDir = resolve(import.meta.dirname, "..");
+const originalCsvPath = join(rootDir, "workspace", "original.csv");
 const translatedCsvPath = join(rootDir, "workspace", "translated.csv");
+const dataDatPath = join(rootDir, "output", "PSP_GAME", "USRDIR", "DATA.DAT");
 
 const requiredColumns = ["id", "encoding", "raw_length", "translation"] as const;
+const nispackMagic = Buffer.from("NISPACK\x00", "ascii");
+const nispackHeaderSize = 16;
+const nispackEntrySize = 44;
 
 type RequiredColumn = (typeof requiredColumns)[number];
 type EncodingName = "shift_jis" | "cp932" | "utf-8" | "ascii";
 type CsvRow = Record<string, string> & { lineNumber: string };
+
+type GameCharset = {
+  table: Buffer;
+};
+type ConfirmedSourceChars = Set<string>;
+type CharProblem = {
+  char: string;
+  suggestion: string | null;
+};
+
+function readUInt32LE(data: Buffer, offset: number) {
+  if (offset < 0 || offset + 4 > data.length) {
+    throw new Error(`UInt32 越界：offset=0x${offset.toString(16)}, size=${data.length}`);
+  }
+  return data.readUInt32LE(offset);
+}
+
+function loadGameCharset(): GameCharset {
+  if (!existsSync(dataDatPath)) {
+    throw new Error(`找不到 DATA.DAT，无法读取游戏字符集：${dataDatPath}`);
+  }
+
+  const data = readFileSync(dataDatPath);
+  const base = data.indexOf(nispackMagic);
+  if (base < 0) {
+    throw new Error("DATA.DAT 中找不到 NISPACK 头，无法读取游戏字符集");
+  }
+
+  const count = readUInt32LE(data, base + 12);
+  for (let index = 0; index < count; index += 1) {
+    const entryOffset = base + nispackHeaderSize + index * nispackEntrySize;
+    const rawName = data.subarray(entryOffset, entryOffset + 32);
+    const nul = rawName.indexOf(0);
+    const name = rawName.subarray(0, nul < 0 ? rawName.length : nul).toString("ascii");
+    const relativeOffset = readUInt32LE(data, entryOffset + 32);
+    const size = readUInt32LE(data, entryOffset + 36);
+    const absoluteOffset = base + relativeOffset;
+
+    if (name !== "jis2ucs.bin") {
+      continue;
+    }
+    if (size !== 65536 * 2) {
+      throw new Error(`jis2ucs.bin 大小异常：${size}`);
+    }
+    if (absoluteOffset + size > data.length) {
+      throw new Error(`jis2ucs.bin 越界：offset=0x${absoluteOffset.toString(16)}, size=${size}`);
+    }
+    return { table: data.subarray(absoluteOffset, absoluteOffset + size) };
+  }
+
+  throw new Error("DATA.DAT/NISPACK 中找不到 jis2ucs.bin，无法读取游戏字符集");
+}
 
 function parseCsvLine(line: string) {
   const fields: string[] = [];
@@ -71,6 +129,24 @@ function parseCsv(content: string) {
   });
 }
 
+function loadConfirmedSourceChars(): ConfirmedSourceChars {
+  if (!existsSync(originalCsvPath)) {
+    throw new Error(`找不到原文表，无法读取 confirmed 显示样本：${originalCsvPath}`);
+  }
+
+  const rows = parseCsv(readFileSync(originalCsvPath, "utf8"));
+  const chars = new Set<string>();
+  for (const row of rows) {
+    if (row.status !== "confirmed") {
+      continue;
+    }
+    for (const char of row.source ?? "") {
+      chars.add(char);
+    }
+  }
+  return chars;
+}
+
 function getRequired(row: CsvRow, column: RequiredColumn) {
   const value = row[column];
   if (value === undefined) {
@@ -120,7 +196,133 @@ function decodeText(data: Buffer, encoding: EncodingName) {
   return iconv.decode(data, encoding);
 }
 
-function checkRow(row: CsvRow) {
+function sjisBytesToJisCode(bytes: Buffer) {
+  if (bytes.length === 1) {
+    return bytes[0]!;
+  }
+
+  if (bytes.length !== 2) {
+    return null;
+  }
+
+  const lead = bytes[0]!;
+  const trail = bytes[1]!;
+  if (!((lead >= 0x81 && lead <= 0x9f) || (lead >= 0xe0 && lead <= 0xfc))) {
+    return null;
+  }
+  if (!((trail >= 0x40 && trail <= 0x7e) || (trail >= 0x80 && trail <= 0xfc))) {
+    return null;
+  }
+
+  let row = lead < 0xe0 ? (lead - 0x81) * 2 + 0x21 : (lead - 0xe0) * 2 + 0x5f;
+  let cell: number;
+  if (trail < 0x9f) {
+    cell = trail - (trail > 0x7e ? 0x20 : 0x1f);
+  } else {
+    row += 1;
+    cell = trail - 0x7e;
+  }
+
+  if (row < 0 || row > 0xff || cell < 0 || cell > 0xff) {
+    return null;
+  }
+  return (row << 8) | cell;
+}
+
+function readGameCharsetCodePoint(charset: GameCharset, jisCode: number) {
+  if (jisCode < 0 || jisCode >= 65536) {
+    return 0;
+  }
+  return charset.table.readUInt16LE(jisCode * 2);
+}
+
+function describeChar(char: string) {
+  const codePoint = char.codePointAt(0) ?? 0;
+  return `${char}(U+${codePoint.toString(16).toUpperCase().padStart(4, "0")})`;
+}
+
+function isInGameCharset(char: string, encoding: EncodingName, charset: GameCharset) {
+  const codePoint = char.codePointAt(0) ?? 0;
+  const encoded = encodeText(char, encoding, []);
+  const jisCode = sjisBytesToJisCode(encoded);
+  const mapped = jisCode === null ? 0 : readGameCharsetCodePoint(charset, jisCode);
+  return mapped === codePoint;
+}
+
+function normalizeCandidate(char: string) {
+  const normalized = char.normalize("NFKC");
+  return Array.from(normalized).length === 1 ? normalized : null;
+}
+
+function getReplacementCandidates(char: string) {
+  const candidates: string[] = [];
+  const preferred = preferredCharReplacements.get(char);
+  const normalized = normalizeCandidate(char);
+  if (preferred !== undefined) {
+    candidates.push(preferred);
+  }
+  if (normalized !== null) {
+    candidates.push(normalized);
+  }
+  return Array.from(new Set(candidates.filter((candidate) => candidate !== char)));
+}
+
+function suggestConfirmedChar(char: string, encoding: EncodingName, charset: GameCharset, confirmedSourceChars: ConfirmedSourceChars) {
+  for (const candidate of getReplacementCandidates(char)) {
+    if (confirmedSourceChars.has(candidate) && isInGameCharset(candidate, encoding, charset)) {
+      return candidate;
+    }
+  }
+  return null;
+}
+
+function formatCharProblems(items: CharProblem[]) {
+  const unique = new Map<string, CharProblem>();
+  for (const item of items) {
+    unique.set(item.char, item);
+  }
+  return Array.from(unique.values())
+    .map((item) => {
+      const base = describeChar(item.char);
+      return item.suggestion === null ? base : `${base}，建议改为：${item.suggestion}`;
+    })
+    .join("、");
+}
+
+function checkGameCharset(
+  text: string,
+  encoding: EncodingName,
+  charset: GameCharset,
+  confirmedSourceChars: ConfirmedSourceChars,
+  problems: string[],
+) {
+  if (encoding === "utf-8") {
+    return;
+  }
+
+  const unsupported: CharProblem[] = [];
+  const unconfirmed: CharProblem[] = [];
+  for (const char of text) {
+    const codePoint = char.codePointAt(0) ?? 0;
+    const suggestion = suggestConfirmedChar(char, encoding, charset, confirmedSourceChars);
+    const inGameCharset = isInGameCharset(char, encoding, charset);
+    if (!inGameCharset) {
+      unsupported.push({ char, suggestion });
+    }
+    if (inGameCharset && codePoint > 0x7f && !confirmedSourceChars.has(char)) {
+      unconfirmed.push({ char, suggestion });
+    }
+  }
+
+  if (unsupported.length > 0) {
+    problems.push(`字符不在游戏内置 jis2ucs 字符集：${formatCharProblems(unsupported)}`);
+  }
+  if (unconfirmed.length > 0) {
+    problems.push(`字符没有 confirmed 原文显示样本：${formatCharProblems(unconfirmed)}`);
+  }
+}
+
+function checkRow(row: CsvRow, charset: GameCharset, confirmedSourceChars: ConfirmedSourceChars) {
   const id = getRequired(row, "id");
   const problems: string[] = [];
   const translation = getCell(row, "translation", problems);
@@ -154,6 +356,8 @@ function checkRow(row: CsvRow) {
     problems.push(`译文不能用 ${encoding} 无损编码，回读结果：${roundtrip}`);
   }
 
+  checkGameCharset(translation, encoding, charset, confirmedSourceChars, problems);
+
   if (encoded.length > rawLength) {
     problems.push(`译文字节数超限：${encoded.length} > ${rawLength}`);
   }
@@ -172,6 +376,8 @@ function main() {
   }
 
   const rows = parseCsv(readFileSync(translatedCsvPath, "utf8"));
+  const charset = loadGameCharset();
+  const confirmedSourceChars = loadConfirmedSourceChars();
   const rowsById = new Map<string, CsvRow[]>();
   for (const row of rows) {
     const id = getRequired(row, "id");
@@ -207,7 +413,7 @@ function main() {
     }
 
     const row = matchedRows[0]!;
-    const result = checkRow(row);
+    const result = checkRow(row, charset, confirmedSourceChars);
     results.push({
       id,
       ok: result.problems.length === 0,

@@ -339,10 +339,18 @@ encoding=utf-8 + transform=none         用于 PARAM.SFO
 
 ```text
 encoded byte length <= raw_length
+shift_jis / cp932 / ascii 译文必须落在 DATA.DAT/NISPACK/jis2ucs.bin 内置字符集
+非 ASCII 译文字符必须在 workspace/original.csv 的 confirmed 原文中出现过，作为当前资源里有显示样本的保守证据
 offset + raw_length 不越界
 candidate 不写回
 decode_error 不写回
 ```
+
+字符集标准以当前 ISO 的 `DATA.DAT/NISPACK/jis2ucs.bin` 为准，不是完整 JIS X 0213 Plane 1。当前确认的范围是 ASCII 0x01-0x7E、JIS X 0201 半角片假名 0xA1-0xDF，以及 `jis2ucs.bin` 中非零的 JIS 码位映射。完整 Plane 1 中没有出现在 `jis2ucs.bin` 的字符不能视为可用。
+
+`jis2ucs.bin` 只能证明码位映射存在，不能证明 FontA/FontB 中该字形实际可正确显示。已有实测显示 `數`、`處` 虽然通过 `jis2ucs.bin` 映射，但游戏里不能正确显示。因此写回前再要求字符出现在 confirmed 原文中；这是一条保守的显示样本规则。
+
+`check-ids` 对部分已知异体字/繁简字会给出 confirmed 可显示替代建议，例如 `數 -> 数`、`處 -> 処`。候选表维护在 `scripts/game-char-replacements.ts`。表内每一项必须满足：左侧字符按当前规则不可安全显示，右侧字符按当前规则可安全显示，并且右侧是左侧的保守字形/正字替代。修改后必须运行 `yarn -s validate-char-replacements`。建议只作为翻译修订的候选，最终仍以语义和长度限制为准。
 
 ### 4. patch DATA.DAT 成员
 
@@ -378,6 +386,6 @@ logs/run2.ppsspp.log
 
 - 不要把 `candidate` 直接当成可翻译主表。
 - 不要为了容纳长中文先改 DATA.DAT 大小；先保持原地写回。
-- 简体中文很多字符不能 Shift-JIS 编码，初版翻译要受编码限制。
+- 简体中文很多字符既不能 Shift-JIS 编码，也不在游戏内置 `jis2ucs.bin` 字符集内；另有部分繁体/异体字虽然有码表映射但没有 confirmed 显示样本，初版翻译也要避开。
 - `iconv-lite` 的 Shift-JIS / CP932 行为和 Python strict `shift_jis` 不完全一致；这是本项目识别更多文本的原因之一，也是 candidate 分层存在的原因。
 - `workspace/original.csv` 很大，后续处理时尽量用脚本过滤，不要手工全量打开编辑。
