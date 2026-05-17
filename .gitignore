@@ -147,3 +147,4 @@ game/*.iso
 build/*
 !build/.gitkeep
 output/*
+!output/.gitkeep
