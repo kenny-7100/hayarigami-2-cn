@@ -10,7 +10,7 @@
 workspace/original.csv
 ```
 
-用户明确希望本项目倾向使用 Node.js / TypeScript 方案，而不是沿用另一个 `lxzs` 项目的 Python 工具链。
+用户明确希望本项目使用当前仓库的 Node.js / TypeScript 工具链，并且不要参考或沿用废弃实验项目 `hxzs` / `lxzs` 里的内容、翻译、脚本或结论。
 
 ## 当前项目结构
 
@@ -180,36 +180,15 @@ confirmed 75907 行，约 87.80%
 candidate 10543 行，约 12.20%
 ```
 
-## 与 lxzs 项目的关系
+## 废弃实验项目
 
-用户要求参考另一个项目：
+不要参考或沿用废弃实验项目 `hxzs` / `lxzs` 里的内容、翻译、脚本、校验规则或历史结论。那些项目已经被用户明确标记为废弃且错误，不能作为本项目的依据。
 
-```text
-/Users/kenny/kenny/lxzs
-```
-
-该项目也是针对《流行之神 2》PSP 的汉化工作流，已经摸清了大部分非视觉文本来源和提取方式。
-
-当前项目没有直接复制 Python 脚本，而是用 TypeScript 重新实现，并将输出合并成一个 CSV。
-
-旧 `lxzs` 稳定表可作为 confirmed 提取的下限参考。当前 TypeScript 版本相对旧项目：
-
-```text
-story    missing_vs_lxzs 0, extra_vs_lxzs 14
-logic    missing_vs_lxzs 0, extra_vs_lxzs 14
-occult   missing_vs_lxzs 0, extra_vs_lxzs 0
-selecter missing_vs_lxzs 0, extra_vs_lxzs 0
-```
-
-解释：
-
-- 没有丢掉旧项目已确认的 story / logic / occult / selecter 文本。
-- 当前 Node/iconv 方案在 story 和 logic 里各多识别 14 行 confirmed。
-- 额外 candidate 行用于扩大文本发现范围，不应直接视作可写回文本。
+本项目只以当前仓库内的工具链、当前 ISO 解包资源、`workspace/original.csv` / `workspace/translated.csv`、以及直接从 `output/PSP_GAME/USRDIR/DATA.DAT` 等当前资源得出的分析结果为准。
 
 ## 编码和写回约束
 
-`lxzs` 项目的已有回填策略是保守的原地写回：
+当前项目采用保守的原地写回策略：
 
 ```text
 译文编码后的字节长度 <= 原始 raw_length / length
@@ -236,7 +215,7 @@ translation -> utf-8 encode
 len(bytes) + 1 <= max_size
 ```
 
-旧项目没有做：
+当前阶段不做：
 
 ```text
 扩容 story.dat
